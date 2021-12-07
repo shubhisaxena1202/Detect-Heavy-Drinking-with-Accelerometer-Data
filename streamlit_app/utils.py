@@ -2,24 +2,32 @@ import pandas as pd
 import numpy as np
 from scipy.signal import find_peaks
 from scipy import stats
+from sklearn.metrics import accuracy_score, roc_auc_score, precision_score, recall_score, f1_score, r2_score
 
 imp_features = ['y_std', 'z_std', 'y_aad', 'z_aad', 'y_max', 'z_neg_count', 'y_pos_count', 'z_pos_count', 'x_peak_count', 'y_peak_count', 'z_peak_count', 'x_kurtosis', 'y_kurtosis', 'z_kurtosis', 'z_mean_fft', 'y_std_fft', 'z_std_fft', 'y_aad_fft', 'z_aad_fft', 'z_min_fft', 'y_max_fft', 'z_max_fft', 'y_maxmin_diff_fft', 'z_maxmin_diff_fft', 'y_mad_fft', 'y_IQR_fft', 'z_peak_count_fft']
 
-def create_stats_fourier_transform_data(df_train, window_size, step_size=25):
+def create_stats_fourier_transform_data(df_train, window_size, step_size=25, is_bulk=False):
     
-    x_list, y_list, z_list = [], [], []
+    x_list, y_list, z_list, timestamp, labels = [], [], [], [], []
+    for i in range(0, df_train.shape[0] - window_size, step_size):
+        xs = df_train['x'].values[i: i + window_size]
+        ys = df_train['y'].values[i: i + window_size]
+        zs = df_train['z'].values[i: i + window_size]
+        if is_bulk:
+            times = np.min(df_train['timestamp'][i: i + window_size])
+            label = np.max(df_train['label'][i: i + window_size])
+            timestamp.append(times)
+            labels.append(label)
 
-    xs = df_train['x'].values[0: window_size]
-    ys = df_train['y'].values[0: window_size]
-    zs = df_train['z'].values[0: window_size]
-
-    x_list.append(xs)
-    y_list.append(ys)
-    z_list.append(zs)
-    
+        x_list.append(xs)
+        y_list.append(ys)
+        z_list.append(zs)
+        
+        
     # Statistical Features on raw x, y and z in time domain
     X_train = pd.DataFrame()
-
+    
+    X_train['timestamp'] = timestamp
     # mean
     X_train['x_mean'] = pd.Series(x_list).apply(lambda x: x.mean())
     X_train['y_mean'] = pd.Series(y_list).apply(lambda x: x.mean())
@@ -104,13 +112,13 @@ def create_stats_fourier_transform_data(df_train, window_size, step_size=25):
     X_train['avg_result_accl'] = [i.mean() for i in ((pd.Series(x_list)**2 + pd.Series(y_list)**2 + pd.Series(z_list)**2)**0.5)]
 
     # signal magnitude area
-    X_train['sma'] = pd.Series(x_list).apply(lambda x: np.sum(abs(x)/window_size)) + pd.Series(y_list).apply(lambda x: np.sum(abs(x)/window_size)) \
+    X_train['sma'] =    pd.Series(x_list).apply(lambda x: np.sum(abs(x)/window_size)) + pd.Series(y_list).apply(lambda x: np.sum(abs(x)/window_size)) \
                   + pd.Series(z_list).apply(lambda x: np.sum(abs(x)/window_size))
     
     # converting the signals from time domain to frequency domain using FFT
-    x_list_fft = pd.Series(x_list).apply(lambda x: np.abs(np.fft.fft(x))[1:step_size+1])
-    y_list_fft = pd.Series(y_list).apply(lambda x: np.abs(np.fft.fft(x))[1:step_size+1])
-    z_list_fft = pd.Series(z_list).apply(lambda x: np.abs(np.fft.fft(x))[1:step_size+1])
+    x_list_fft = pd.Series(x_list).apply(lambda x: np.abs(np.fft.fft(x))[1:26])
+    y_list_fft = pd.Series(y_list).apply(lambda x: np.abs(np.fft.fft(x))[1:26])
+    z_list_fft = pd.Series(z_list).apply(lambda x: np.abs(np.fft.fft(x))[1:26])
 
     # Statistical Features on raw x, y and z in frequency domain
     # FFT mean
@@ -189,13 +197,18 @@ def create_stats_fourier_transform_data(df_train, window_size, step_size=25):
     # FFT Signal magnitude area
     X_train['sma_fft'] = pd.Series(x_list_fft).apply(lambda x: np.sum(abs(x)/step_size)) + pd.Series(y_list_fft).apply(lambda x: np.sum(abs(x)/step_size)) \
                          + pd.Series(z_list_fft).apply(lambda x: np.sum(abs(x)/step_size))
-
-    return X_train
+    
+    return X_train, pd.DataFrame(labels, columns=["gold"])
     
     
-def process_data(df):
-#     print(f'shape of data {df.shape}')
+    
+def process_data(df, is_bulk):
+    X, gold_labels = create_stats_fourier_transform_data(df, 199, step_size=25, is_bulk=is_bulk)
+    return X, gold_labels, imp_features
 
-    X = create_stats_fourier_transform_data(df, 200)
-#     print(f'shape of data {X.shape}')
-    return X[imp_features]
+def get_metrics(pred, gold):
+    prec = precision_score(gold, pred)
+    rec = recall_score(gold, pred)
+    f1 = f1_score(gold, pred)
+    display_df = pd.DataFrame([[prec, rec, f1]], columns=["Precision","Recall", "F1 Score"])
+    return display_df
